@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "arena-ai"
+version = "0.0.1"
+description = "Placeholder for LMArena open source package."
+readme = "README.md"
+license = {text = "TBD"}
+requires-python = ">=3.11"
+authors = [
+    {name = "Clayton Thorrez", email = "clayton@lmarena.ai"}
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+]
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov",
+]
+
+[project.urls]
+Homepage = "https://lmarena.ai"
+Repository = "https://github.com/lmarena/arena-ai"
+Issues = "https://github.com/lmarena/arena-ai/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["arena"]
