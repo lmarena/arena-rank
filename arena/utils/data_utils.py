@@ -1,6 +1,8 @@
+from abc import ABC, abstractmethod
+from typing import Dict, List
 import pandas as pd
 import jax.numpy as jnp
-from typing import Dict, Tuple, List
+from typing import Tuple
 
 
 def get_outcomes(df, outcome_col, outcome_map, dtype=jnp.float64) -> jnp.ndarray:
@@ -23,12 +25,47 @@ def get_matchups_and_competitors(df, competator_cols: list = ["model_a", "model_
     return matchups, competitors.tolist()
 
 
-class PairDataset:
+class BasePairDataset(ABC):
+    """Abstract base class for pairwise comparison datasets."""
+
     n_pairs: int
     n_competitors: int
-    pairs: jnp.ndarray  # shape (n_pairs, 2) integer indices of competitors
+    pairs: jnp.ndarray
+    outcomes: jnp.ndarray
     weights: jnp.ndarray
-    outcomes: jnp.ndarray  # shape (n_pairs,)
+    competitors: List[str]
+    competitor_to_index: Dict[str, int]
+
+    def __init__(
+        self,
+        competitors: List[str],
+        pairs: jnp.ndarray,
+        outcomes: jnp.ndarray,
+        weights: jnp.ndarray,
+    ):
+        self.n_competitors = len(competitors)
+        self.competitors = competitors
+        self.competitor_to_index = {comp: idx for idx, comp in enumerate(competitors)}
+        self.n_pairs = len(outcomes)
+        self.pairs = pairs
+        self.outcomes = outcomes
+        self.weights = weights
+
+    @abstractmethod
+    def as_dict(self) -> Dict:
+        """Return dataset as dictionary for model consumption."""
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def from_pandas(df, **kwargs):
+        """Create dataset from pandas DataFrame."""
+        pass
+
+
+class PairDataset(BasePairDataset):
+    """Dataset class for standard Bradley-Terry model. Aggregates rows with the same (A,B,outcome) triplet for efficiency."""
+
     counts: jnp.ndarray  # shape (n_pairs,)
     opt_weights: jnp.ndarray  # shape (n_pairs,)
 
@@ -41,14 +78,16 @@ class PairDataset:
         weights: jnp.ndarray,
         opt_weights: jnp.ndarray,
     ):
-        self.n_competitors = len(competitors)
-        self.competitors = competitors
-        self.n_pairs = len(outcomes)
-        self.pairs = pairs
-        self.outcomes = outcomes
+        super().__init__(competitors, pairs, outcomes, weights)
         self.counts = counts
-        self.weights = weights
         self.opt_weights = opt_weights
+
+    def as_dict(self) -> Dict:
+        return {
+            "pairs": self.pairs,
+            "outcomes": self.outcomes,
+            "opt_weights": self.opt_weights,
+        }
 
     @staticmethod
     def from_pandas(
@@ -74,9 +113,7 @@ class PairDataset:
         unique_outcomes = unique_rows[:, 2]
         unique_row_counts = unique_row_counts.astype(jnp.float64)
 
-        sorted_unique_matchups = jnp.sort(
-            unique_matchups, axis=1
-        )  # sort each row so (a,b) and (b,a) are treated the same
+        sorted_unique_matchups = jnp.sort(unique_matchups, axis=1)
         unique_pairs, unique_pair_indices = jnp.unique(sorted_unique_matchups, axis=0, return_inverse=True)
 
         unique_pair_sums = jnp.zeros(unique_pairs.shape[0], dtype=jnp.float64)
@@ -84,6 +121,7 @@ class PairDataset:
         pair_counts = unique_pair_sums[unique_pair_indices]
 
         if reweighted:
+            # do not divide by the mean here, since these weights are per-pair, not per-observation
             weights = 1.0 / jnp.maximum(pair_counts, min_pair_count)
         else:
             weights = jnp.ones_like(pair_counts, dtype=jnp.float64)
@@ -98,11 +136,10 @@ class PairDataset:
         )
 
 
-class ContextualPairDataset(PairDataset):
+class ContextualPairDataset(BasePairDataset):
     """
     Dataset container for Contextual Bradley-Terry.
-    Unlike PairDataset, this does NOT aggregate rows by matchup,
-    because features vary per specific battle.
+    Unlike PairDataset, this does NOT aggregate rows by matchup, because features vary per specific battle.
     """
 
     features: jnp.ndarray  # shape (n_rows, n_features)
@@ -115,14 +152,17 @@ class ContextualPairDataset(PairDataset):
         features: jnp.ndarray,
         weights: jnp.ndarray,
     ):
-        self.n_competitors = len(competitors)
-        self.competitors = competitors
-        self.n_pairs = len(outcomes)
-        self.pairs = pairs
-        self.outcomes = outcomes
-        self.n_features = features.shape[1]
+        super().__init__(competitors, pairs, outcomes, weights)
         self.features = features
-        self.weights = weights
+        self.n_features = features.shape[1]
+
+    def as_dict(self) -> Dict:
+        return {
+            "pairs": self.pairs,
+            "outcomes": self.outcomes,
+            "features": self.features,
+            "weights": self.weights,
+        }
 
     @staticmethod
     def from_pandas(
@@ -138,40 +178,30 @@ class ContextualPairDataset(PairDataset):
         },
         reweighted: bool = True,
         min_pair_count: int = 50,
+        normalize_features: bool = True,
     ) -> "ContextualPairDataset":
-        # 1. Get Matchups and Outcomes (Raw, un-aggregated)
+        # extract matchups and outcomes
         matchups, competitors = get_matchups_and_competitors(df, competitor_cols)
         outcomes = get_outcomes(df, outcome_col, outcome_map)
 
-        # 2. Process Features (Normalize)
-        # We use pandas/numpy for the initial stats calculation to avoid loading huge raw data to GPU memory immediately
-        features_raw = df[feature_cols].values.astype(float)
-        mean = features_raw.mean(axis=0)
-        std = features_raw.std(axis=0)
-        # Avoid division by zero
-        std = jnp.where(std == 0, 1.0, std)
-        features_norm = (features_raw - mean) / std
-        features = jnp.array(features_norm, dtype=jnp.float64)
+        features = jnp.array(df[feature_cols].values.astype(float))
+        if normalize_features:
+            mean = features.mean(axis=0)
+            std = features.std(axis=0)
+            std = jnp.where(std == 0, 1.0, std)
+            features = (features - mean) / std
 
-        # 3. Calculate Weights (The tricky part)
-        # Even though we don't aggregate rows, we need to know how common a pair is
-        # to apply the inverse-frequency weighting (if reweighted=True).
-
+        # reweighting assigns inverse propensity weights at the pair level
         if reweighted:
-            # Sort matchups so (A,B) and (B,A) are identified as the same pair
+            # sort matchups so (A,B) and (B,A) are identified as the same pair
             sorted_matchups = jnp.sort(matchups, axis=1)
 
-            # Find unique pairs and the inverse indices mapping rows to those pairs
+            # find unique pairs and the inverse indices mapping rows to those pairs
             _, pair_idx, pair_counts = jnp.unique(sorted_matchups, axis=0, return_inverse=True, return_counts=True)
 
-            # Map the total count of the pair back to the individual row
-            # If row 0 is A vs B, and A vs B happens 100 times total, row_counts[0] = 100
+            # map the total count of the pair back to the individual row
             row_pair_counts = pair_counts[pair_idx].astype(jnp.float64)
-
-            # Apply weight formula: 1 / max(count, min_threshold)
             weights = 1.0 / jnp.maximum(row_pair_counts, min_pair_count)
-
-            # Normalize weights so the mean weight is 1.0 (maintains loss scale)
             weights = weights / jnp.mean(weights)
         else:
             weights = jnp.ones(len(outcomes), dtype=jnp.float64)

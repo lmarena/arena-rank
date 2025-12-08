@@ -64,8 +64,9 @@ def test_wikipedia_example():
     )
     model.fit(dataset)
 
-    ratings = model.params["ratings"]
-    names = dataset.competitors
+    results = model.compute_ratings_and_cis(dataset, significance_level=0.05)
+    names = results["competitors"]
+    ratings = results["ratings"]
 
     # convert log-ratings back to 'power' scores
     power_scores = np.exp(ratings)

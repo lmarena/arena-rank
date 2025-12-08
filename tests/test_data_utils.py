@@ -1,7 +1,7 @@
-import random
-from itertools import combinations
-import numpy as np
+import pytest
 import pandas as pd
+import numpy as np
+import jax.numpy as jnp
 from arena.utils.data_utils import get_matchups_and_competitors, PairDataset
 
 
@@ -15,41 +15,89 @@ def test_get_matchups_and_competitors() -> None:
     np.testing.assert_array_equal(matchups, expected_matchups)
 
 
-def test_pair_dataset():
-    random.seed(42)
-    n_competitors = 4
-    competitors = [f"competitor_{i}" for i in range(n_competitors)]
-    competitor_to_idx = {name: i for i, name in enumerate(competitors)}
-    combs = list(combinations(competitors, 2))
-    comb_counts = [100 * (i + 1) for i in range(len(combs))]
-    comb_winrates = [random.uniform(0.1, 0.9) for _ in range(len(combs))]
-    num_pairs = sum(comb_counts)
-    matches = []
-    win_counts = np.zeros((n_competitors, n_competitors))
-    for (a, b), count, winrate in zip(combs, comb_counts, comb_winrates):
-        a_wins = int(count * winrate)
-        b_wins = count - a_wins
-        win_counts[competitor_to_idx[a], competitor_to_idx[b]] = a_wins
-        win_counts[competitor_to_idx[b], competitor_to_idx[a]] = b_wins
+def test_pair_dataset_aggregation_logic():
+    data = [
+        ("comp_0", "comp_1", 1.0, 2),  # comp_0 beats comp_1 twice
+        ("comp_0", "comp_1", 0.0, 1),  # comp_1 beats comp_0 once
+        ("comp_0", "comp_1", 0.5, 1),  # comp_0 ties comp_1 once
+        ("comp_1", "comp_0", 1.0, 1),  # comp_1 beats comp_0 once (reverse order)
+        ("comp_2", "comp_0", 0.0, 1),  # comp_0 beats comp_2 once (reverse order)
+        ("comp_2", "comp_0", 1.0, 3),  # comp_2 beats comp_0 three times (reverse order)
+    ]
 
-        matches.extend([(a, b, "model_a")] * a_wins)
-        matches.extend([(b, a, "model_b")] * b_wins)
-    random.shuffle(matches)
-    df = pd.DataFrame(matches, columns=["model_a", "model_b", "winner"])
+    rev = {1.0: "comp_a", 0.0: "comp_b", 0.5: "tie"}
+    raw = [(a, b, rev[o]) for (a, b, o, c) in data for _ in range(c)]
+    df = pd.DataFrame(raw, columns=["comp_a", "comp_b", "winner"])
+
     dataset = PairDataset.from_pandas(
         df,
-        competitor_cols=["model_a", "model_b"],
+        competitor_cols=["comp_a", "comp_b"],
         outcome_col="winner",
-        outcome_map={"model_a": 1.0, "model_b": 0.0},
+        outcome_map={"comp_a": 1.0, "comp_b": 0.0, "tie": 0.5},
+        reweighted=False,
     )
-    assert dataset.n_competitors == n_competitors
-    assert dataset.n_pairs == len(combs) * 2  # each combination has two outcomes
-    total_counts = np.sum(dataset.counts)
-    assert total_counts == num_pairs
-    wins = dataset.outcomes == 1.0
-    for (i, j), count in zip(dataset.pairs[wins], dataset.counts[wins]):
-        a_wins = win_counts[i, j]
-        assert count == a_wins
-    for (j, i), count in zip(dataset.pairs[~wins], dataset.counts[~wins]):
-        b_wins = win_counts[j, i]
-        assert count == b_wins
+
+    # expected outputs
+    exp = jnp.array([(dataset.competitor_to_index[a], dataset.competitor_to_index[b], o, c) for (a, b, o, c) in data])
+    match = (
+        (exp[:, 0, None] == dataset.pairs[:, 0])
+        & (exp[:, 1, None] == dataset.pairs[:, 1])
+        & jnp.isclose(exp[:, 2, None], dataset.outcomes)
+    )
+    assert jnp.all(jnp.sum(match, axis=1) == 1)
+    assert jnp.allclose(jnp.sum(match * dataset.counts, axis=1), exp[:, 3])
+    assert jnp.sum(dataset.counts) == len(df)
+
+
+@pytest.mark.parametrize("n_competitors", [5])
+@pytest.mark.parametrize("n_matches_per_pair", [10])
+def test_pair_dataset_properties_randomized(n_competitors, n_matches_per_pair):
+    """
+    Randomized property-based test to ensure consistency on larger data
+    and verify weight calculations.
+    """
+    np.random.seed(42)
+
+    competitors = np.char.add("c_", np.arange(n_competitors).astype(str))
+
+    # Generate all pairs (including reverse orders to test robustness)
+    # We intentionally use a list of indices then map to names to control ground truth
+    idx_a = np.random.randint(0, n_competitors, n_matches_per_pair * n_competitors**2)
+    idx_b = np.random.randint(0, n_competitors, n_matches_per_pair * n_competitors**2)
+
+    # Filter out self-play
+    mask = idx_a != idx_b
+    idx_a = idx_a[mask]
+    idx_b = idx_b[mask]
+
+    model_a_col = competitors[idx_a]
+    model_b_col = competitors[idx_b]
+
+    # Random winners
+    outcomes = np.random.choice(["model_a", "model_b", "tie"], size=len(idx_a))
+
+    df = pd.DataFrame({"model_a": model_a_col, "model_b": model_b_col, "winner": outcomes})
+
+    # 2. Execution (With Reweighting)
+    dataset = PairDataset.from_pandas(
+        df,
+        reweighted=True,
+        min_pair_count=1,  # Set low to ensure math is easy to check
+    )
+    # number of unique (A,B, outcome) triplets must equal number of rows in dataset
+    unique_triplets = df.groupby(["model_a", "model_b", "winner"]).size().reset_index()
+    assert dataset.n_pairs == len(unique_triplets)
+
+    # sum of triplet counts must equal total rows in original df
+    assert np.isclose(jnp.sum(dataset.counts), len(df))
+
+    random_idx = np.random.randint(0, dataset.n_pairs)
+    p1, p2 = dataset.pairs[random_idx]
+
+    pair_mask = ((dataset.pairs[:, 0] == p1) & (dataset.pairs[:, 1] == p2)) | (
+        (dataset.pairs[:, 0] == p2) & (dataset.pairs[:, 1] == p1)
+    )
+
+    total_pair_observations = jnp.sum(dataset.counts[pair_mask])
+    expected_weight_val = 1.0 / max(float(total_pair_observations), float(1))
+    assert np.isclose(dataset.weights[random_idx], expected_weight_val)

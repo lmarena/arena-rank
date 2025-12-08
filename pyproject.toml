@@ -38,6 +38,7 @@ dev = [
 examples = [
     "datasets",
     "kagglehub",
+    "tiktoken",
     "matplotlib",
     "seaborn",
     "notebook",
