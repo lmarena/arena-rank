@@ -14,7 +14,7 @@ uv sync
 ## Examples
 The minimal example of using `arena` to produce a leaderboard on LMArena data can be run in only a few lines:
 ```python
-# Minimal example of usinge arena to produce a leaderboard using LMArena data
+# Minimal example of using arena to produce a leaderboard using LMArena data
 import numpy as np
 import datasets
 from arena.utils.data_utils import PairDataset
@@ -51,6 +51,7 @@ grok-3-preview-02-24                : 1071.28 (1063.70, 1078.85)
 llama-4-maverick-03-26-experimental : 1067.21 (1059.38, 1075.04)
 gemini-2.5-flash                    : 1061.26 (1055.31, 1067.22)
 ```
+(Note that this ranking is with a subset of publicly released data from July, and without style control so it's not reflective of the live leaderboard.)
 
 There are more advanced example notebooks in the [examples](examples/) folder covering techniques such as the style control leaderboard on [LMArena](examples/lmarena.ipynb), analysis of voter patterns on the [PRISM](examples/prism.ipynb) dataset, and analysis of sports and video game competitions using the general Bradley-Terry methodology in [nba.ipynb](examples/nba.ipynb) and [melee.ipynb](examples/melee.ipynb).
 
