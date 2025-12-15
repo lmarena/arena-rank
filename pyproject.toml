@@ -43,6 +43,7 @@ examples = [
     "seaborn",
     "notebook",
     "ipywidgets",
+    "tabulate",
 ]
 
 [project.urls]
