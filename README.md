@@ -6,7 +6,7 @@
 </p>
 
 <h3 align="center">
-Arena-AI: The ranking methodology powering the LMArena leaderboard.
+Arena: The ranking methodology powering the LMArena leaderboard.
 </h3>
 
 <p align="center">
