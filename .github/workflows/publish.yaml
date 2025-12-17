@@ -28,7 +28,7 @@ jobs:
           python-version: "3.11"
       
       - name: Run tests
-        run: uv run pytest --cov=arena
+        run: uv run pytest --cov=arena_rank
 
   build:
     name: Build distribution

@@ -32,4 +32,4 @@ Repository = "https://github.com/lmarena/arena-ai"
 Issues = "https://github.com/lmarena/arena-ai/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["arena"]
+packages = ["arena_rank"]

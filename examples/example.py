@@ -1,4 +1,4 @@
-from arena.hello import hello
+from arena_rank.hello import hello
 
 def run_hello() -> None:
     print(hello())
