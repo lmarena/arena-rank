@@ -3,11 +3,11 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "arena-ai"
+name = "arena-rank"
 version = "0.0.1"
-description = "Placeholder for LMArena open source package."
+description = "The ranking methodology powering the LMArena leaderboard"
 readme = "README.md"
-license = {text = "TBD"}
+license = {text = "Apache 2.0"}
 requires-python = ">=3.11"
 authors = [
     {name = "Clayton Thorrez", email = "clayton@lmarena.ai"}
@@ -16,7 +16,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: Apache 2.0",
 ]
 dependencies = []
 
