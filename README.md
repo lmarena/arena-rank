@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="arena_rank/assets/logo-dark.png">
-    <img alt="LMArena logo" src="arena_rank/assets/logo.png" width=30%>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/lmarena/arena-rank/refs/heads/main/arena_rank/assets/logo-dark.png">
+    <img alt="LMArena logo" src="https://raw.githubusercontent.com/lmarena/arena-rank/refs/heads/main/arena_rank/assets/logo.png" width=30%>
   </picture>
 </p>
 
