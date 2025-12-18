@@ -9,7 +9,7 @@ def test_get_matchups_and_competitors() -> None:
     col_a = ["D", "A", "B", "C"]
     col_b = ["B", "C", "D", "A"]
     df = pd.DataFrame({"col_a": col_a, "col_b": col_b})
-    matchups, competitors = get_matchups_and_competitors(df, competator_cols=["col_a", "col_b"])
+    matchups, competitors = get_matchups_and_competitors(df, competitor_cols=["col_a", "col_b"])
     assert competitors == ["A", "B", "C", "D"]
     expected_matchups = np.array([[3, 1], [0, 2], [1, 3], [2, 0]])
     np.testing.assert_array_equal(matchups, expected_matchups)

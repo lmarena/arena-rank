@@ -14,11 +14,11 @@ def get_outcomes(df, outcome_col, outcome_map, dtype=jnp.float64) -> jnp.ndarray
     return outcomes
 
 
-def get_matchups_and_competitors(df, competator_cols: list = ["model_a", "model_b"]) -> Tuple[jnp.ndarray, List[str]]:
+def get_matchups_and_competitors(df, competitor_cols: list = ["model_a", "model_b"]) -> Tuple[jnp.ndarray, List[str]]:
     """maps the str model_a, model_b columns used in lmarena datasets to integer indices and returns the list of unique competitors"""
     n_rows = len(df)
     competitor_indices, competitors = pd.factorize(
-        pd.concat([df[competator_cols[0]], df[competator_cols[1]]]), sort=True
+        pd.concat([df[competitor_cols[0]], df[competitor_cols[1]]]), sort=True
     )
     competitor_indices = jnp.array(competitor_indices, dtype=jnp.int32)
     matchups = jnp.column_stack([competitor_indices[:n_rows], competitor_indices[n_rows:]])
