@@ -174,7 +174,7 @@ def test_ci_methods_comparison():
 
     # compute CIs using sandwich estimator
     results_sandwich = model.compute_ratings_and_cis(dataset, significance_level=0.05, ci_method="sandwich")
-    # compute CIs using botstrap
+    # compute CIs using bootstrap
     results_bootstrap = model.compute_ratings_and_cis(
         dataset, significance_level=0.05, ci_method="bootstrap", num_bootstrap=200
     )
