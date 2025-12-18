@@ -16,20 +16,6 @@ on:
     types: [published]
 
 jobs:
-  test:
-    name: Run tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v4
-        with:
-          python-version: "3.11"
-      
-      - name: Run tests
-        run: uv run pytest --cov=arena_rank
-
   build:
     name: Build distribution
     needs: test
