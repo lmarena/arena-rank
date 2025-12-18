@@ -18,18 +18,41 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "License :: OSI Approved :: Apache Software License",
 ]
-dependencies = []
+dependencies = [
+    "numpy==2.3.3",
+    "pandas",
+    "datasets",
+    "jax==0.8.1",
+    "jaxtyping",
+    "optax",
+]
 
 [dependency-groups]
 dev = [
     "pytest>=8.0",
     "pytest-cov",
+    "pre-commit",
+    "ruff",
+]
+
+examples = [
+    "datasets",
+    "kagglehub",
+    "tiktoken",
+    "matplotlib",
+    "seaborn",
+    "notebook",
+    "ipywidgets",
+    "tabulate",
 ]
 
 [project.urls]
 Homepage = "https://lmarena.ai"
-Repository = "https://github.com/lmarena/arena-ai"
-Issues = "https://github.com/lmarena/arena-ai/issues"
+Repository = "https://github.com/lmarena/arena-rank"
+Issues = "https://github.com/lmarena/arena-rank/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["arena_rank"]
+
+[tool.ruff]
+line-length = 120
