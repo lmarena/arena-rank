@@ -356,7 +356,7 @@ def preprocess_prism(df):
     # self-join to create pairs
     pair_df = message_df.merge(message_df, on=["conversation_id", "user_id"], suffixes=("_a", "_b"), how="inner")
 
-    # filter dplicate pairs model_a < model_b
+    # filter duplicate pairs model_a < model_b
     pair_df = pair_df[pair_df["model_name_a"] < pair_df["model_name_b"]].copy()
 
     conditions = [pair_df["score_a"] > pair_df["score_b"], pair_df["score_a"] < pair_df["score_b"]]
