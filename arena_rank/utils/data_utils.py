@@ -1,16 +1,24 @@
 from abc import ABC, abstractmethod
-from typing import Dict, List
+from typing import Dict, List, Callable
 import pandas as pd
 import jax.numpy as jnp
 from typing import Tuple
 
 
-def get_outcomes(df, outcome_col, outcome_map, dtype=jnp.float64) -> jnp.ndarray:
-    """maps the str winner column used in lmarena datasets to float outcomes like 1.0, 0.0, 0.5"""
-    outcomes = jnp.empty(len(df), dtype=dtype)
-    for outcome_str, outcome_val in outcome_map.items():
-        cond = jnp.array(df[outcome_col] == outcome_str)
-        outcomes = jnp.where(cond, outcome_val, outcomes)
+def default_outcome_map(outcome: str) -> float:
+    """Default outcome mapping function for standard arena results."""
+    mapping = {
+        "model_a": 1.0,
+        "model_b": 0.0,
+        "tie": 0.5,
+        "both_bad": 0.5,
+    }
+    return mapping.get(outcome, 0.5)
+
+
+def get_outcomes(df, outcome_col, outcome_map: Callable[[str], float], dtype=jnp.float64) -> jnp.ndarray:
+    """Maps the str winner column used in lmarena datasets to float outcomes like 1.0, 0.0, 0.5"""
+    outcomes = jnp.array(df[outcome_col].map(outcome_map).values, dtype=dtype)
     return outcomes
 
 
@@ -94,12 +102,7 @@ class PairDataset(BasePairDataset):
         df,
         competitor_cols: list = ["model_a", "model_b"],
         outcome_col: str = "winner",
-        outcome_map: Dict[str, float] = {
-            "model_a": 1.0,
-            "model_b": 0.0,
-            "tie": 0.5,
-            "both_bad": 0.5,
-        },
+        outcome_map: Callable[[str], float] = default_outcome_map,
         reweighted: bool = False,
         min_pair_count: int = 50,
     ) -> "PairDataset":
@@ -170,12 +173,7 @@ class ContextualPairDataset(BasePairDataset):
         feature_cols: List[str],
         competitor_cols: list = ["model_a", "model_b"],
         outcome_col: str = "winner",
-        outcome_map: Dict[str, float] = {
-            "model_a": 1.0,
-            "model_b": 0.0,
-            "tie": 0.5,
-            "both_bad": 0.5,
-        },
+        outcome_map: Callable[[str], float] = default_outcome_map,
         reweighted: bool = True,
         min_pair_count: int = 50,
         normalize_features: bool = True,

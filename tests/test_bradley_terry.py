@@ -191,3 +191,70 @@ def test_ci_methods_comparison():
         rtol=0.1,
         err_msg="Upper bounds diverge between Hessian and Bootstrap methods",
     )
+
+
+def test_soft_outcomes():
+    """
+    Tests Bradley-Terry model with soft (continuous) outcomes between 0 and 1.
+    Outcomes are generated as sigmoid of rating differences plus small noise.
+    Verifies that the model correctly recovers the relative ordering of competitors.
+    """
+    np.random.seed(42)
+    n_competitors = 10
+    n_games = 100
+
+    # ground truth ratings with clear separation
+    true_ratings = np.linspace(0.0, 2.0, n_competitors)
+    comp_names = np.arange(n_competitors).astype(str)
+
+    # sample indices for Team A
+    idxs_a = np.random.randint(0, n_competitors, size=n_games)
+    # generate offsets to ensure distinct Team B (no self-play)
+    offsets = np.random.randint(1, n_competitors, size=n_games)
+    idxs_b = (idxs_a + offsets) % n_competitors
+
+    r_a = true_ratings[idxs_a]
+    r_b = true_ratings[idxs_b]
+
+    # generate soft outcomes as sigmoid + small noise
+    logits = r_a - r_b
+    base_probs = expit(logits)
+    noise = np.random.normal(0, 0.05, size=n_games)
+    soft_outcomes = np.clip(base_probs + noise, 0.0, 1.0)
+
+    df = pd.DataFrame(
+        {
+            "team_1": comp_names[idxs_a],
+            "team_2": comp_names[idxs_b],
+            "outcome": soft_outcomes,
+        }
+    )
+    dataset = PairDataset.from_pandas(
+        df,
+        competitor_cols=["team_1", "team_2"],
+        outcome_col="outcome",
+        outcome_map=lambda x: x,  # pass-through for soft outcomes
+        reweighted=False,
+    )
+    model = BradleyTerry(n_competitors=len(dataset.competitors))
+    model.fit(dataset)
+
+    results = model.compute_ratings_and_cis(dataset, significance_level=0.05)
+    names = results["competitors"]
+    ratings = results["ratings"]
+
+    # create mapping from competitor name to estimated rating
+    rating_map = {name: float(rating) for name, rating in zip(names, ratings)}
+    estimated_ratings = np.array([rating_map[name] for name in comp_names])
+
+    # verify that the ordering is preserved
+    true_order = np.argsort(true_ratings)
+    estimated_order = np.argsort(estimated_ratings)
+    np.testing.assert_array_equal(
+        true_order,
+        estimated_order,
+        err_msg="Estimated ratings did not preserve the correct ordering of competitors",
+    )
+    # verify high correlation between true and estimated ratings
+    correlation = np.corrcoef(true_ratings, estimated_ratings)[0, 1]
+    assert correlation > 0.99, f"Correlation between true and estimated ratings too low: {correlation}"

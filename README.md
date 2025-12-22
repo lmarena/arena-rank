@@ -42,9 +42,7 @@ model = BradleyTerry(n_competitors=len(dataset.competitors))
 
 # compute ratings and 95% confidence intervals
 results = model.compute_ratings_and_cis(dataset, significance_level=0.05)
-```
-We visualize the top 10 models on the leaderboard:
-```python
+
 # print top 10 competitors with ratings and confidence intervals
 leaderboard = pd.DataFrame(results).sort_values("ratings", ascending=False).head(10)
 print(leaderboard.to_markdown(index=False))
