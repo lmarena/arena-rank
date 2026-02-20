@@ -6,11 +6,11 @@
 </p>
 
 <h3 align="center">
-Arena-Rank: The ranking methodology powering the LMArena leaderboard.
+Arena-Rank: The ranking methodology powering the Arena leaderboard.
 </h3>
 
 <p align="center">
-| <a href="https://lmarena.ai"><b>LMArena</b></a> | <a href="https://news.lmarena.ai"><b>Blog</b></a> | <a href="https://x.com/arena"><b>X</b></a> | <a href="https://discord.com/invite/LMArena"><b>Discord</b></a> | <a href="https://www.linkedin.com/company/lmarena"><b>LinkedIn</b></a> |
+| <a href="https://arena.ai"><b>Arena</b></a> | <a href="https://arena.ai/blog"><b>Blog</b></a> | <a href="https://x.com/arena"><b>X</b></a> | <a href="https://discord.com/invite/LMArena"><b>Discord</b></a> | <a href="https://www.linkedin.com/company/arenaai"><b>LinkedIn</b></a> | <a href="https://www.youtube.com/@ArenaAIOfficial"><b>YouTube</b></a> |
 </p>
 
 
@@ -25,7 +25,7 @@ uv sync
 ```
 
 ## Examples
-Below is a minimal example using Arena-Rank to produce a leaderboard on LMArena data:
+Below is a minimal example using Arena-Rank to produce a leaderboard on Arena data:
 ```python
 import pandas as pd
 import datasets
@@ -63,7 +63,7 @@ print(leaderboard.to_markdown(index=False))
 | gemini-2.5-flash                    |   1061.26 |        1055.31 |        1067.22 |    9.21695  |
 ```
 
-See the [examples](examples/) folder for notebooks with more advanced examples, covering techniques such as the style-controlled leaderboard on [LMArena](examples/lmarena.ipynb), analysis of voter patterns on the [PRISM](examples/prism.ipynb) dataset, and analysis of [sports](examples/nba.ipynb) and [video game competitions](examples/melee.ipynb) using the Bradley-Terry methodology.
+See the [examples](examples/) folder for notebooks with more advanced examples, covering techniques such as the style-controlled leaderboard on [Arena](examples/lmarena.ipynb), analysis of voter patterns on the [PRISM](examples/prism.ipynb) dataset, and analysis of [sports](examples/nba.ipynb) and [video game competitions](examples/melee.ipynb) using the Bradley-Terry methodology.
 
 ## Contributing
 We welcome and encourage contributions. To develop Arena-Rank, make sure to install the development dependencies and the git pre-commit hooks.
