@@ -25,6 +25,13 @@ uv sync
 ```
 
 ## Examples
+
+### Running the [examples](examples/)
+
+1. Clone the repository and install dependencies using your preferred package manager (e.g. `uv sync`, `pip install arena-rank`)
+1. Open any notebook in `examples/` using your preferred tool (e.g. VS Code, Cursor, Jupyter)
+1. Select the project's virtual environment (e.g. `.venv/`) as your kernel when prompted, then run all cells
+   
 Below is a minimal example using Arena-Rank to produce a leaderboard on Arena data:
 ```python
 import pandas as pd
