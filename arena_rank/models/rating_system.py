@@ -2,6 +2,7 @@
 
 from abc import ABC, abstractmethod
 from functools import partial
+
 from jaxtyping import PyTree
 
 from arena_rank.utils.data_utils import BasePairDataset

@@ -19,10 +19,10 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
 ]
 dependencies = [
-    "numpy==2.3.3",
+    "numpy",
     "pandas",
     "datasets",
-    "jax==0.8.1",
+    "jax",
     "jaxtyping",
     "optax",
 ]
@@ -56,3 +56,6 @@ packages = ["arena_rank"]
 
 [tool.ruff]
 line-length = 120
+
+[tool.ruff.lint]
+extend-select = ["I"]

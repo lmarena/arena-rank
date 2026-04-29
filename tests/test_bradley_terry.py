@@ -1,10 +1,12 @@
 import random
+
 import numpy as np
-from scipy.special import expit
 import pandas as pd
+from scipy.special import expit
+
 from arena_rank.models.bradley_terry import BradleyTerry
 from arena_rank.models.contextual_bradley_terry import ContextualBradleyTerry
-from arena_rank.utils.data_utils import PairDataset, ContextualPairDataset
+from arena_rank.utils.data_utils import ContextualPairDataset, PairDataset
 
 
 def test_wikipedia_example():
