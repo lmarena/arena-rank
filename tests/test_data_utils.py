@@ -1,8 +1,9 @@
-import pytest
-import pandas as pd
-import numpy as np
 import jax.numpy as jnp
-from arena_rank.utils.data_utils import get_matchups_and_competitors, PairDataset
+import numpy as np
+import pandas as pd
+import pytest
+
+from arena_rank.utils.data_utils import PairDataset, get_matchups_and_competitors
 
 
 def test_get_matchups_and_competitors() -> None:
