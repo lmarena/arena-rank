@@ -1,8 +1,8 @@
 from abc import ABC, abstractmethod
-from typing import Dict, List, Callable
-import pandas as pd
+from typing import Callable, Dict, List, Tuple
+
 import jax.numpy as jnp
-from typing import Tuple
+import pandas as pd
 
 
 def default_outcome_map(outcome: str) -> float:

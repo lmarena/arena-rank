@@ -1,10 +1,11 @@
 """Contextual Bradley-Terry rating system implementation in JAX."""
 
-from functools import partial
 import math
-from copy import deepcopy
 import multiprocessing as mp
-from typing import Tuple, Dict, Any
+from copy import deepcopy
+from functools import partial
+from typing import Any, Dict, Tuple
+
 import jax
 import jax.nn as nn
 import jax.numpy as jnp

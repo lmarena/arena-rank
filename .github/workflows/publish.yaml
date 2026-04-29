@@ -21,15 +21,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Set up uv
         uses: astral-sh/setup-uv@v4
         with:
           python-version: "3.11"
-      
+
       - name: Build package
         run: uv build
-      
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -49,7 +49,7 @@ jobs:
         with:
           name: dist
           path: dist/
-      
+
       - name: Publish to TestPyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
@@ -68,6 +68,6 @@ jobs:
         with:
           name: dist
           path: dist/
-      
+
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
