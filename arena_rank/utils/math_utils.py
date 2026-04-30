@@ -3,12 +3,11 @@ Utility functions for mathematical operations.
 """
 
 from typing import Callable, Tuple
-
 import jax
 import jax.numpy as jnp
-import optax
 from jax import jit
 from jaxtyping import PyTree
+import optax
 
 
 @jit
