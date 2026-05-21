@@ -25,6 +25,7 @@ dependencies = [
     "jax",
     "jaxtyping",
     "optax",
+    "scipy",
 ]
 
 [dependency-groups]
