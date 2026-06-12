@@ -2,7 +2,7 @@
 
 Extends the standard Bradley-Terry model to support multiple loss components:
 
-    L(theta) = sum_k w_k * L_k(theta) + 0.5 * ridge_lambda * ||theta||^2
+    L(theta) = sum_k w_k * L_k(theta)
 
 Each L_k is a standard BT negative log-likelihood evaluated on a (potentially
 different) set of pairwise outcomes, all sharing the same latent rating vector
@@ -115,11 +115,11 @@ def build_composite_data(
 
 
 class CompositeBradleyTerry:
-    """Bradley-Terry model with composite loss and optional ridge penalty.
+    """Bradley-Terry model with a composite (multi-component) loss.
 
     The objective is::
 
-        L(theta) = sum_k w_k * L_k(theta) + 0.5 * ridge_lambda * ||theta||^2
+        L(theta) = sum_k w_k * L_k(theta)
 
     Each component L_k is a standard BT log-likelihood on its own set of
     pairwise comparisons. All components share the same rating vector theta,
@@ -134,7 +134,7 @@ class CompositeBradleyTerry:
         scale: float = 400.0,
         base: float = 10.0,
         init_rating: float = 1000.0,
-        ridge_lambda: float = 1e-5,
+        hessian_reg: float = 1e-5,
         max_iter: int = 1000,
         ftol: float = 1e-9,
         gtol: float = 1e-9,
@@ -146,7 +146,7 @@ class CompositeBradleyTerry:
         self.scale = scale
         self.base = base
         self.init_rating = init_rating
-        self.ridge_lambda = ridge_lambda
+        self.hessian_reg = hessian_reg
         self.max_iter = max_iter
         self.ftol = ftol
         self.gtol = gtol
@@ -162,15 +162,13 @@ class CompositeBradleyTerry:
         params: PyTree,
         data: PyTree,
         n_losses: int = 2,
-        ridge_lambda: float = 0.0,
     ) -> jnp.ndarray:
-        """Returns the composite BT negative log-likelihood plus ridge penalty.
+        """Returns the composite BT negative log-likelihood.
 
         Args:
             params: Dict with key ``"ratings"`` of shape ``(n_competitors,)``.
             data: Dict produced by :func:`build_composite_data`.
             n_losses: Number of loss components (static for JIT).
-            ridge_lambda: L2 penalty strength.
         """
         ratings = params["ratings"]
         loss_weights = data["loss_weights"]
@@ -185,14 +183,14 @@ class CompositeBradleyTerry:
             nll_k = -jnp.sum(opt_weights * (outcomes * logits - nn.softplus(logits)))
             total = total + loss_weights[k] * nll_k / jnp.sum(opt_weights)
 
-        return total + 0.5 * ridge_lambda * jnp.sum(ratings**2)
+        return total
 
     @staticmethod
     @partial(jit, static_argnames=["n_competitors", "n_losses"])
     def compute_hessian_and_covariance(
         ratings: jnp.ndarray,
         data: PyTree,
-        ridge_lambda: float,
+        hessian_reg: float,
         n_competitors: int,
         n_losses: int,
     ) -> tuple[jnp.ndarray, jnp.ndarray]:
@@ -200,7 +198,7 @@ class CompositeBradleyTerry:
 
         Computes::
 
-            H = sum_k (w_k / N_k) * H_k + ridge_lambda * I
+            H = sum_k (w_k / N_k) * H_k + hessian_reg * I
             B = sum_k (w_k^2 / N_k) * Sigma_k
 
         where ``H_k`` is the per-component Hessian (unnormalised), ``Sigma_k``
@@ -211,8 +209,7 @@ class CompositeBradleyTerry:
         Args:
             ratings: Fitted rating vector, shape ``(n_competitors,)``.
             data: Dict produced by :func:`build_composite_data`.
-            ridge_lambda: Ridge penalty (enters the Hessian, not the gradient
-                covariance).
+            hessian_reg: Regularization term for the Hessian diagonal.
             n_competitors: Total number of competitors (static for JIT).
             n_losses: Number of loss components (static for JIT).
         """
@@ -254,7 +251,7 @@ class CompositeBradleyTerry:
             sigma_k = second_moment - jnp.outer(mean_score, mean_score)
             grad_cov = grad_cov + (loss_weights[k] ** 2 / n_k) * sigma_k
 
-        hessian = hessian + ridge_lambda * jnp.eye(n_competitors, dtype=ratings.dtype)
+        hessian = hessian + hessian_reg * jnp.eye(n_competitors, dtype=ratings.dtype)
         return hessian, grad_cov
 
     def fit(self, data_dict: dict[str, jnp.ndarray]) -> "CompositeBradleyTerry":
@@ -270,7 +267,6 @@ class CompositeBradleyTerry:
             self.loss_function,
             data=data_dict,
             n_losses=self.n_losses,
-            ridge_lambda=self.ridge_lambda,
         )
         self.params, _ = lbfgs_minimize(
             function=opt_fn,
@@ -292,8 +288,8 @@ class CompositeBradleyTerry:
         """Fits the model (if needed) and returns ratings with sandwich CIs.
 
         Uses the sandwich estimator ``Var(theta_hat) = H^{-1} B H^{-1}`` where
-        *H* is the composite Hessian (including the ridge term) and *B* is the
-        composite gradient covariance.
+        *H* is the composite Hessian (including the ``hessian_reg`` diagonal
+        stabilizer) and *B* is the composite gradient covariance.
 
         Args:
             data_dict: Dict produced by :func:`build_composite_data`.
@@ -314,7 +310,7 @@ class CompositeBradleyTerry:
         hessian, grad_cov = self.compute_hessian_and_covariance(
             ratings=ratings,
             data=data_dict,
-            ridge_lambda=self.ridge_lambda,
+            hessian_reg=self.hessian_reg,
             n_competitors=self.n_competitors,
             n_losses=self.n_losses,
         )
