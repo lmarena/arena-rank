@@ -76,6 +76,7 @@ class PairDataset(BasePairDataset):
 
     counts: jnp.ndarray  # shape (n_pairs,)
     opt_weights: jnp.ndarray  # shape (n_pairs,)
+    ess_counts: jnp.ndarray  # shape (n_pairs,)
 
     def __init__(
         self,
@@ -85,10 +86,14 @@ class PairDataset(BasePairDataset):
         counts: jnp.ndarray,
         weights: jnp.ndarray,
         opt_weights: jnp.ndarray,
+        ess_counts: jnp.ndarray | None = None,
     ):
         super().__init__(competitors, pairs, outcomes, weights)
         self.counts = counts
         self.opt_weights = opt_weights
+        # Kish effective count (sum w)^2 / (sum w^2); equals `counts` when row
+        # weights are constant within the aggregate.
+        self.ess_counts = counts if ess_counts is None else ess_counts
 
     def as_dict(self) -> Dict:
         return {
@@ -105,37 +110,67 @@ class PairDataset(BasePairDataset):
         outcome_map: Callable[[str], float] = default_outcome_map,
         reweighted: bool = False,
         min_pair_count: int = 50,
+        row_weight_col: str | None = None,
     ) -> "PairDataset":
+        """Builds a PairDataset from a pandas dataframe.
+
+        Args:
+            row_weight_col: Optional column with per-row weights in [0, 1] expressing
+                each row's information value. When provided, the effective pair count
+                used by the pair-IPW becomes the sum of row weights per pair (not the
+                raw row count), so the two reweighting layers compose in the same
+                "effective sample size" currency.
+        """
         matchups, competitors = get_matchups_and_competitors(df, competitor_cols)
         outcomes = get_outcomes(df, outcome_col, outcome_map)
 
+        if row_weight_col is not None:
+            row_weights = jnp.array(df[row_weight_col].values, dtype=jnp.float64)
+        else:
+            row_weights = jnp.ones(len(df), dtype=jnp.float64)
+
+        # Aggregate identical (a, b, outcome) triplets, tracking raw counts (for
+        # bootstrap), summed weights (loss / IPW), summed squared weights (meat).
         rows = jnp.column_stack([matchups.astype(jnp.float64), outcomes])
-        unique_rows, unique_row_counts = jnp.unique(rows, return_counts=True, axis=0)
+        unique_rows, row_to_unique_idx, unique_row_counts = jnp.unique(
+            rows, return_inverse=True, return_counts=True, axis=0
+        )
+        unique_row_counts = unique_row_counts.astype(jnp.float64)
+        sum_row_weights = jnp.zeros(unique_rows.shape[0], dtype=jnp.float64).at[row_to_unique_idx].add(row_weights)
+        sum_sq_row_weights = (
+            jnp.zeros(unique_rows.shape[0], dtype=jnp.float64).at[row_to_unique_idx].add(row_weights**2)
+        )
+        nonzero_weight_buckets = sum_sq_row_weights > 0
+        safe_sum_sq_row_weights = jnp.where(nonzero_weight_buckets, sum_sq_row_weights, 1.0)
+        ess_counts = jnp.where(
+            nonzero_weight_buckets,
+            sum_row_weights**2 / safe_sum_sq_row_weights,
+            unique_row_counts,
+        )
 
         unique_matchups = unique_rows[:, :2].astype(jnp.int32)
         unique_outcomes = unique_rows[:, 2]
-        unique_row_counts = unique_row_counts.astype(jnp.float64)
 
+        # Effective pair count = sum of row weights for the (sorted) pair.
         sorted_unique_matchups = jnp.sort(unique_matchups, axis=1)
         unique_pairs, unique_pair_indices = jnp.unique(sorted_unique_matchups, axis=0, return_inverse=True)
-
-        unique_pair_sums = jnp.zeros(unique_pairs.shape[0], dtype=jnp.float64)
-        unique_pair_sums = unique_pair_sums.at[unique_pair_indices].add(unique_row_counts)
-        pair_counts = unique_pair_sums[unique_pair_indices]
+        eff_pair_sums = jnp.zeros(unique_pairs.shape[0], dtype=jnp.float64)
+        eff_pair_sums = eff_pair_sums.at[unique_pair_indices].add(sum_row_weights)
+        eff_pair_counts = eff_pair_sums[unique_pair_indices]
 
         if reweighted:
-            # do not divide by the mean here, since these weights are per-pair, not per-observation
-            weights = 1.0 / jnp.maximum(pair_counts, min_pair_count)
+            pair_weights = 1.0 / jnp.maximum(eff_pair_counts, min_pair_count)
         else:
-            weights = jnp.ones_like(pair_counts, dtype=jnp.float64)
+            pair_weights = jnp.ones_like(eff_pair_counts, dtype=jnp.float64)
 
         return PairDataset(
             competitors=competitors,
             pairs=unique_matchups,
             outcomes=unique_outcomes,
             counts=unique_row_counts,
-            weights=weights,
-            opt_weights=weights * unique_row_counts,
+            weights=(sum_row_weights / unique_row_counts) * pair_weights,
+            opt_weights=sum_row_weights * pair_weights,
+            ess_counts=ess_counts,
         )
 
 
@@ -177,8 +212,17 @@ class ContextualPairDataset(BasePairDataset):
         reweighted: bool = True,
         min_pair_count: int = 50,
         normalize_features: bool = True,
+        row_weight_col: str | None = None,
     ) -> "ContextualPairDataset":
-        # extract matchups and outcomes
+        """Builds a ContextualPairDataset from a pandas dataframe.
+
+        Args:
+            row_weight_col: Optional column with per-row weights in [0, 1] expressing
+                each row's information value. The effective pair count used by the
+                pair-IPW becomes the sum of row weights per pair, so the two
+                reweighting layers compose in the same "effective sample size"
+                currency.
+        """
         matchups, competitors = get_matchups_and_competitors(df, competitor_cols)
         outcomes = get_outcomes(df, outcome_col, outcome_map)
 
@@ -189,18 +233,26 @@ class ContextualPairDataset(BasePairDataset):
             std = jnp.where(std == 0, 1.0, std)
             features = (features - mean) / std
 
-        # reweighting assigns inverse propensity weights at the pair level
+        if row_weight_col is not None:
+            row_weights = jnp.array(df[row_weight_col].values, dtype=jnp.float64)
+        else:
+            row_weights = jnp.ones(len(outcomes), dtype=jnp.float64)
+
         if reweighted:
-            # sort matchups so (A,B) and (B,A) are identified as the same pair
             sorted_matchups = jnp.sort(matchups, axis=1)
+            _, pair_idx = jnp.unique(sorted_matchups, axis=0, return_inverse=True)
+            n_pairs = int(pair_idx.max()) + 1
 
-            # find unique pairs and the inverse indices mapping rows to those pairs
-            _, pair_idx, pair_counts = jnp.unique(sorted_matchups, axis=0, return_inverse=True, return_counts=True)
-
-            # map the total count of the pair back to the individual row
-            row_pair_counts = pair_counts[pair_idx].astype(jnp.float64)
-            weights = 1.0 / jnp.maximum(row_pair_counts, min_pair_count)
+            # Effective pair count = sum of row weights for the pair.
+            eff_pair_sums = jnp.zeros(n_pairs, dtype=jnp.float64).at[pair_idx].add(row_weights)
+            eff_pair_counts_per_row = eff_pair_sums[pair_idx]
+            pair_weights = 1.0 / jnp.maximum(eff_pair_counts_per_row, min_pair_count)
+            weights = row_weights * pair_weights
             weights = weights / jnp.mean(weights)
+        elif row_weight_col is not None:
+            # Without pair-IPW but with explicit row weights, preserve relative weighting
+            # but normalize mean to 1 so the L2 reg term scale is comparable.
+            weights = row_weights / jnp.mean(row_weights)
         else:
             weights = jnp.ones(len(outcomes), dtype=jnp.float64)
 

@@ -104,7 +104,7 @@ class BradleyTerry(RatingSystem):
             ratings: Competitor ratings, shape (n_competitors,)
             matchups: Matchup pairs, shape (n_pairs, 2)
             outcomes: Outcomes of matchups, shape (n_pairs,)
-            counts: Counts of each unique pair, shape (n_pairs,)
+            counts: Effective count of each unique aggregated row, shape (n_pairs,)
             opt_weights: Optimization weights for each matchup, incorporates both occurrence counts and reweighting, shape (n_pairs,)
             hessian_reg: Regularization term for Hessian diagonal.
             n_competitors: Total number of competitors.
@@ -177,7 +177,7 @@ class BradleyTerry(RatingSystem):
                 ratings,
                 dataset.pairs,
                 dataset.outcomes,
-                dataset.counts,
+                dataset.ess_counts,
                 dataset.opt_weights,
                 effective_reg,
                 self.n_competitors,
