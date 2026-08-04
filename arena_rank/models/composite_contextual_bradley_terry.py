@@ -19,141 +19,29 @@ As in :class:`ContextualBradleyTerry`, the ratings carry no penalty in the fit;
 ``hessian_reg`` only stabilizes the Hessian diagonal for confidence intervals,
 while ``reg`` is a genuine L2 penalty on the feature coefficients.
 
-Unlike :func:`build_composite_data`, observations are NOT aggregated by matchup
-because features vary per row (matching :class:`ContextualPairDataset`).
+Unlike the non-contextual preprocessing path, observations are not aggregated
+by matchup because features vary per row.
 """
 
 from __future__ import annotations
 
 import math
 from functools import partial
-from typing import Any, Callable
+from typing import Any
 
 import jax
 import jax.nn as nn
 import jax.numpy as jnp
-import numpy as np
-import pandas as pd
 from jax import jit
 from jaxtyping import PyTree
 
-from arena_rank.models.composite_bradley_terry import DEFAULT_OUTCOME_MAP
 from arena_rank.utils.math_utils import assemble_parwise_matrix, lbfgs_minimize
 
 jax.config.update("jax_enable_x64", True)
 
 __all__ = [
-    "DEFAULT_OUTCOME_MAP",
     "CompositeContextualBradleyTerry",
-    "build_composite_contextual_data",
 ]
-
-
-def build_composite_contextual_data(
-    dfs: list[pd.DataFrame],
-    outcome_cols: list[str],
-    loss_weights: list[float],
-    feature_cols_per_loss: list[list[str] | None] | None = None,
-    outcome_maps: list[Callable | None] | None = None,
-    weight_cols: list[str | None] | None = None,
-    normalize_features: bool = True,
-) -> tuple[dict[str, jnp.ndarray], list[str], list[int]]:
-    """Prepares the data dict consumed by :class:`CompositeContextualBradleyTerry`.
-
-    Each element of *dfs* supplies one loss component. Every DataFrame must
-    contain ``model_a`` and ``model_b`` columns plus the column named in the
-    corresponding entry of *outcome_cols*. A component may optionally carry
-    contextual features; components without features behave like a plain
-    Bradley-Terry term.
-
-    Rows are NOT aggregated (unlike :func:`build_composite_data`) because the
-    contextual features vary per observation.
-
-    Args:
-        dfs: One DataFrame per loss component.
-        outcome_cols: Column holding the outcome value in each DataFrame.
-        loss_weights: Scalar weight w_k for each loss component.
-        feature_cols_per_loss: Per-component list of feature column names.
-            A ``None`` entry (or omitting the argument entirely) means that
-            component has no features and contributes a plain BT term.
-        outcome_maps: Per-component mapping applied to outcome values
-            (e.g. a dict ``get`` for string-to-float conversion). ``None``
-            entries leave outcomes as-is.
-        weight_cols: Per-component column name holding per-observation weights
-            (e.g. inverse-propensity weights). ``None`` entries default to
-            uniform weights of 1.
-        normalize_features: If ``True``, z-score normalize each component's
-            features (per component, over its own rows).
-
-    Returns:
-        A tuple ``(data_dict, competitors, feature_dims)`` where *data_dict* is
-        a JAX-friendly dict, *competitors* is the sorted list of all model names
-        (shared index mapping), and *feature_dims* is the per-component feature
-        count (0 for feature-less components).
-    """
-    n = len(dfs)
-    if feature_cols_per_loss is None:
-        feature_cols_per_loss = [None] * n
-    if outcome_maps is None:
-        outcome_maps = [None] * n
-    if weight_cols is None:
-        weight_cols = [None] * n
-
-    all_models: set[str] = set()
-    for df in dfs:
-        all_models.update(df["model_a"])
-        all_models.update(df["model_b"])
-    competitors = sorted(all_models)
-    comp_to_idx = {m: i for i, m in enumerate(competitors)}
-
-    data_dict: dict[str, jnp.ndarray] = {
-        "loss_weights": jnp.array(loss_weights, dtype=jnp.float64),
-    }
-    feature_dims: list[int] = []
-
-    for k, (df, col, fcols, omap, wcol) in enumerate(
-        zip(dfs, outcome_cols, feature_cols_per_loss, outcome_maps, weight_cols)
-    ):
-        n_obs = len(df)
-        idx_a = np.array([comp_to_idx[m] for m in df["model_a"]], dtype=np.int32)
-        idx_b = np.array([comp_to_idx[m] for m in df["model_b"]], dtype=np.int32)
-        matchups = jnp.column_stack([jnp.array(idx_a), jnp.array(idx_b)])
-
-        if omap is not None:
-            outcomes = jnp.array(df[col].map(omap).values, dtype=jnp.float64)
-        else:
-            outcomes = jnp.array(df[col].values.astype(float), dtype=jnp.float64)
-
-        if wcol is not None:
-            weights = jnp.array(df[wcol].values.astype(float), dtype=jnp.float64)
-        else:
-            weights = jnp.ones(n_obs, dtype=jnp.float64)
-
-        if fcols:
-            features = jnp.array(df[fcols].values.astype(float), dtype=jnp.float64)
-            if normalize_features:
-                mean = features.mean(axis=0)
-                std = features.std(axis=0)
-                std = jnp.where(std == 0, 1.0, std)
-                features = (features - mean) / std
-            f_k = len(fcols)
-        else:
-            features = jnp.zeros((n_obs, 0), dtype=jnp.float64)
-            f_k = 0
-
-        # No aggregation: each row is a distinct observation, so counts are 1
-        # and opt_weights collapse to the per-observation weights.
-        counts = jnp.ones(n_obs, dtype=jnp.float64)
-
-        data_dict[f"pairs_{k}"] = matchups
-        data_dict[f"outcomes_{k}"] = outcomes
-        data_dict[f"counts_{k}"] = counts
-        data_dict[f"weights_{k}"] = weights
-        data_dict[f"opt_weights_{k}"] = counts * weights
-        data_dict[f"features_{k}"] = features
-        feature_dims.append(f_k)
-
-    return data_dict, competitors, feature_dims
 
 
 class CompositeContextualBradleyTerry:
@@ -229,7 +117,7 @@ class CompositeContextualBradleyTerry:
         Args:
             params: Dict with key ``"ratings"`` and one ``f"coeffs_{k}"`` entry
                 per feature-bearing component.
-            data: Dict produced by :func:`build_composite_contextual_data`.
+            data: Dict produced by :func:`arena_rank.preprocessing.build_composite_contextual_data`.
             n_losses: Number of loss components (static for JIT).
             feature_dims: Per-component feature count (static for JIT). A count
                 of 0 means the component contributes a plain BT term.
@@ -286,7 +174,7 @@ class CompositeContextualBradleyTerry:
 
         Args:
             params: Fitted parameter PyTree.
-            data: Dict produced by :func:`build_composite_contextual_data`.
+            data: Dict produced by :func:`arena_rank.preprocessing.build_composite_contextual_data`.
             hessian_reg: Diagonal regularizer added to the full Hessian for
                 numerical stability.
             reg: L2 penalty on feature coefficients (curvature added to the
@@ -393,7 +281,7 @@ class CompositeContextualBradleyTerry:
         """Fits the model via L-BFGS.
 
         Args:
-            data_dict: Dict produced by :func:`build_composite_contextual_data`.
+            data_dict: Dict produced by :func:`arena_rank.preprocessing.build_composite_contextual_data`.
 
         Returns:
             ``self`` (for chaining).
@@ -429,7 +317,7 @@ class CompositeContextualBradleyTerry:
         rating block.
 
         Args:
-            data_dict: Dict produced by :func:`build_composite_contextual_data`.
+            data_dict: Dict produced by :func:`arena_rank.preprocessing.build_composite_contextual_data`.
             competitors: Sorted list of model names (index mapping).
             significance_level: Two-sided significance level (default 0.05
                 gives 95% CIs).

@@ -33,6 +33,8 @@ uv sync
 1. Select the project's virtual environment (e.g. `.venv/`) as your kernel when prompted, then run all cells
 
 Below is a minimal example using Arena-Rank to produce a leaderboard on Arena data:
+Polars DataFrames are supported through `PairDataset.from_polars(df)`.
+
 ```python
 import pandas as pd
 import datasets

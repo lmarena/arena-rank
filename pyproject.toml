@@ -21,6 +21,7 @@ classifiers = [
 dependencies = [
     "numpy",
     "pandas",
+    "polars>=1.42.1",
     "datasets",
     "jax",
     "jaxtyping",

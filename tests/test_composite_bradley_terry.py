@@ -1,10 +1,12 @@
 import numpy as np
 import pandas as pd
+import polars as pl
 
 from arena_rank import (
     DEFAULT_OUTCOME_MAP,
     CompositeBradleyTerry,
     build_composite_data,
+    build_composite_data_from_polars,
 )
 
 
@@ -30,6 +32,30 @@ def _make_fact_df(rng, models, n_per_pair=80):
             outcome = float(rng.uniform(0.6, 0.8))
             rows.append({"model_a": a, "model_b": b, "outcome": outcome})
     return pd.DataFrame(rows)
+
+
+def test_polars_builder_matches_pandas_builder():
+    pdf = pd.DataFrame(
+        {
+            "model_a": ["A", "A", "B"],
+            "model_b": ["B", "C", "C"],
+            "winner": ["model_a", "tie", "model_b"],
+            "sample_weight": [1.0, 0.5, 0.25],
+        }
+    )
+    kwargs = {
+        "outcome_cols": ["winner"],
+        "loss_weights": [1.0],
+        "outcome_maps": [DEFAULT_OUTCOME_MAP],
+        "weight_cols": ["sample_weight"],
+    }
+
+    pandas_data, pandas_competitors = build_composite_data(dfs=[pdf], **kwargs)
+    polars_data, polars_competitors = build_composite_data_from_polars(dfs=[pl.from_pandas(pdf)], **kwargs)
+
+    assert pandas_competitors == polars_competitors
+    for key in pandas_data:
+        np.testing.assert_allclose(pandas_data[key], polars_data[key])
 
 
 def test_two_model_dominance():
