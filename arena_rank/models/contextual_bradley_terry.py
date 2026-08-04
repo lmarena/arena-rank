@@ -13,7 +13,7 @@ from jax import jit, tree_util
 from jaxtyping import PyTree
 
 from arena_rank.models.rating_system import RatingSystem
-from arena_rank.utils.data_utils import ContextualPairDataset
+from arena_rank.preprocessing.datasets import ContextualPairDataset
 from arena_rank.utils.math_utils import assemble_parwise_matrix
 
 jax.config.update("jax_enable_x64", True)

@@ -1,15 +1,17 @@
 import numpy as np
 import pandas as pd
+import polars as pl
 
 from arena_rank import (
     DEFAULT_OUTCOME_MAP,
     CompositeBradleyTerry,
     CompositeContextualBradleyTerry,
     build_composite_contextual_data,
+    build_composite_contextual_data_from_polars,
     build_composite_data,
 )
 from arena_rank.models.contextual_bradley_terry import ContextualBradleyTerry
-from arena_rank.utils.data_utils import ContextualPairDataset
+from arena_rank.preprocessing import ContextualPairDataset
 
 
 def _make_contextual_df(seed, n_competitors=20, n_matches=4000, n_features=3):
@@ -48,6 +50,60 @@ def _make_plain_df(seed, models, n_per_pair=120):
                 winner = "model_a" if rng.random() < 0.7 else "model_b"
                 rows.append({"model_a": a, "model_b": b, "winner": winner})
     return pd.DataFrame(rows)
+
+
+def test_polars_contextual_builder_matches_pandas_builder():
+    pdf = pd.DataFrame(
+        {
+            "model_a": ["A", "A", "B"],
+            "model_b": ["B", "C", "C"],
+            "winner": ["model_a", "tie", "model_b"],
+            "sample_weight": [1.0, 0.5, 0.25],
+            "feature_0": [1.0, 0.0, -1.0],
+        }
+    )
+    kwargs = {
+        "outcome_cols": ["winner"],
+        "loss_weights": [1.0],
+        "feature_cols_per_loss": [["feature_0"]],
+        "outcome_maps": [DEFAULT_OUTCOME_MAP],
+        "weight_cols": ["sample_weight"],
+    }
+
+    pandas_data, pandas_competitors, pandas_dims = build_composite_contextual_data(dfs=[pdf], **kwargs)
+    polars_data, polars_competitors, polars_dims = build_composite_contextual_data_from_polars(
+        dfs=[pl.from_pandas(pdf)], **kwargs
+    )
+
+    assert pandas_competitors == polars_competitors
+    assert pandas_dims == polars_dims
+    for key in pandas_data:
+        np.testing.assert_allclose(pandas_data[key], polars_data[key])
+
+
+def test_polars_contextual_builder_aggregates_exact_duplicates():
+    df = pl.DataFrame(
+        {
+            "model_a": ["A", "A", "A", "B"],
+            "model_b": ["B", "B", "B", "A"],
+            "outcome": [1.0, 1.0, 1.0, 1.0],
+            "sample_weight": [0.5, 0.5, 0.5, 1.0],
+            "feature": [1.0, 1.0, 1.0, -1.0],
+        }
+    )
+    data, _, _ = build_composite_contextual_data_from_polars(
+        dfs=[df],
+        outcome_cols=["outcome"],
+        loss_weights=[1.0],
+        feature_cols_per_loss=[["feature"]],
+        weight_cols=["sample_weight"],
+        normalize_features=False,
+    )
+
+    assert data["pairs_0"].shape == (2, 2)
+    np.testing.assert_array_equal(data["counts_0"], [3.0, 1.0])
+    np.testing.assert_array_equal(data["weights_0"], [0.5, 1.0])
+    np.testing.assert_array_equal(data["opt_weights_0"], [1.5, 1.0])
 
 
 def test_single_contextual_component_matches_standalone_contextual():

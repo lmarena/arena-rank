@@ -5,7 +5,7 @@ from functools import partial
 
 from jaxtyping import PyTree
 
-from arena_rank.utils.data_utils import BasePairDataset
+from arena_rank.preprocessing.datasets import BasePairDataset
 from arena_rank.utils.math_utils import lbfgs_minimize
 
 

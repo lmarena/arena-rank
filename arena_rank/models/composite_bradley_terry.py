@@ -14,104 +14,17 @@ from __future__ import annotations
 
 import math
 from functools import partial
-from typing import Any, Callable
+from typing import Any
 
 import jax
 import jax.nn as nn
 import jax.numpy as jnp
-import numpy as np
-import pandas as pd
 from jax import jit
 from jaxtyping import PyTree
 
 from arena_rank.utils.math_utils import assemble_parwise_matrix, lbfgs_minimize
 
 jax.config.update("jax_enable_x64", True)
-
-DEFAULT_OUTCOME_MAP: dict[str, float] = {
-    "model_a": 1.0,
-    "model_b": 0.0,
-    "tie": 0.5,
-    "both_bad": 0.5,
-}
-
-
-def build_composite_data(
-    dfs: list[pd.DataFrame],
-    outcome_cols: list[str],
-    loss_weights: list[float],
-    outcome_maps: list[Callable | None] | None = None,
-    weight_cols: list[str | None] | None = None,
-) -> tuple[dict[str, jnp.ndarray], list[str]]:
-    """Prepares the data dict consumed by :class:`CompositeBradleyTerry`.
-
-    Each element of *dfs* supplies one loss component. Every DataFrame must
-    contain ``model_a`` and ``model_b`` columns plus the column named in the
-    corresponding entry of *outcome_cols*.
-
-    Args:
-        dfs: One DataFrame per loss component.
-        outcome_cols: Column holding the outcome value in each DataFrame.
-        loss_weights: Scalar weight w_k for each loss component.
-        outcome_maps: Per-component mapping applied to outcome values
-            (e.g. a dict ``get`` for string-to-float conversion). ``None``
-            entries leave outcomes as-is.
-        weight_cols: Per-component column name holding per-observation weights
-            (e.g. inverse-propensity weights). ``None`` entries default to
-            uniform weights of 1. After aggregation, ``opt_weights = counts *
-            weights`` (arena-rank convention).
-
-    Returns:
-        A tuple ``(data_dict, competitors)`` where *data_dict* is a JAX-friendly
-        dict and *competitors* is the sorted list of all model names (shared
-        index mapping).
-    """
-    if outcome_maps is None:
-        outcome_maps = [None] * len(dfs)
-    if weight_cols is None:
-        weight_cols = [None] * len(dfs)
-
-    all_models: set[str] = set()
-    for df in dfs:
-        all_models.update(df["model_a"])
-        all_models.update(df["model_b"])
-    competitors = sorted(all_models)
-    comp_to_idx = {m: i for i, m in enumerate(competitors)}
-
-    data_dict: dict[str, jnp.ndarray] = {
-        "loss_weights": jnp.array(loss_weights, dtype=jnp.float64),
-    }
-
-    for k, (df, col, omap, wcol) in enumerate(zip(dfs, outcome_cols, outcome_maps, weight_cols)):
-        idx_a = np.array([comp_to_idx[m] for m in df["model_a"]], dtype=np.int32)
-        idx_b = np.array([comp_to_idx[m] for m in df["model_b"]], dtype=np.int32)
-        matchups = jnp.column_stack([jnp.array(idx_a), jnp.array(idx_b)])
-
-        if omap is not None:
-            outcomes = jnp.array(df[col].map(omap).values, dtype=jnp.float64)
-        else:
-            outcomes = jnp.array(df[col].values.astype(float), dtype=jnp.float64)
-
-        if wcol is not None:
-            weights = jnp.array(df[wcol].values.astype(float), dtype=jnp.float64)
-        else:
-            weights = jnp.ones(len(df), dtype=jnp.float64)
-
-        rows = jnp.column_stack([matchups.astype(jnp.float64), outcomes, weights])
-        unique_rows, counts = jnp.unique(rows, return_counts=True, axis=0)
-
-        u_matchups = unique_rows[:, :2].astype(jnp.int32)
-        u_outcomes = unique_rows[:, 2]
-        u_weights = unique_rows[:, 3]
-        u_counts = counts.astype(jnp.float64)
-
-        data_dict[f"pairs_{k}"] = u_matchups
-        data_dict[f"outcomes_{k}"] = u_outcomes
-        data_dict[f"counts_{k}"] = u_counts
-        data_dict[f"weights_{k}"] = u_weights
-        data_dict[f"opt_weights_{k}"] = u_counts * u_weights
-
-    return data_dict, competitors
 
 
 class CompositeBradleyTerry:
@@ -167,7 +80,7 @@ class CompositeBradleyTerry:
 
         Args:
             params: Dict with key ``"ratings"`` of shape ``(n_competitors,)``.
-            data: Dict produced by :func:`build_composite_data`.
+            data: Dict produced by :func:`arena_rank.preprocessing.build_composite_data`.
             n_losses: Number of loss components (static for JIT).
         """
         ratings = params["ratings"]
@@ -208,7 +121,7 @@ class CompositeBradleyTerry:
 
         Args:
             ratings: Fitted rating vector, shape ``(n_competitors,)``.
-            data: Dict produced by :func:`build_composite_data`.
+            data: Dict produced by :func:`arena_rank.preprocessing.build_composite_data`.
             hessian_reg: Regularization term for the Hessian diagonal.
             n_competitors: Total number of competitors (static for JIT).
             n_losses: Number of loss components (static for JIT).
@@ -258,7 +171,7 @@ class CompositeBradleyTerry:
         """Fits the model via L-BFGS.
 
         Args:
-            data_dict: Dict produced by :func:`build_composite_data`.
+            data_dict: Dict produced by :func:`arena_rank.preprocessing.build_composite_data`.
 
         Returns:
             ``self`` (for chaining).
@@ -292,7 +205,7 @@ class CompositeBradleyTerry:
         stabilizer) and *B* is the composite gradient covariance.
 
         Args:
-            data_dict: Dict produced by :func:`build_composite_data`.
+            data_dict: Dict produced by :func:`arena_rank.preprocessing.build_composite_data`.
             competitors: Sorted list of model names (index mapping).
             significance_level: Two-sided significance level (default 0.05
                 gives 95% CIs).
